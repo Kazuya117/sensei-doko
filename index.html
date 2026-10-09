@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#eef4f8">
+<title>先生いまどこ？</title>
+<meta name="description" content="先生を探し回る時間をなくすための、学内向けアプリ">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+<div id="boot" class="center"><p>読み込んでいます…</p></div>
+
+<section id="login" class="center" hidden>
+  <div class="logo">🧭</div>
+  <h1>先生いまどこ？</h1>
+  <p class="lead">探し回らなくて大丈夫。<br>見かけた人が、場所を教えてくれます。</p>
+  <button id="login-btn" class="primary">学校のGoogleアカウントでログイン</button>
+  <p id="login-error" class="error" hidden></p>
+  <p class="small">ログイン画面に「lotmxestisnibdyfemdk.supabase.co に移動」と表示されます。このアプリのログイン用サーバーの名前です。</p>
+  <p class="small">探せるのは、参加に同意した先生だけです。<br><a href="privacy.html">このアプリの約束とデータの扱い</a></p>
+</section>
+
+<div id="app" hidden>
+  <main>
+    <p id="hours" class="banner" hidden>いまは使える時間外です（月〜土の7時〜19時に使えます）。</p>
+
+    <section id="view-find" class="view">
+      <header><p class="eyebrow">さがす</p><h1>どの先生に、会いたい？</h1></header>
+      <div id="my-searches"></div>
+      <input id="filter" placeholder="先生の名前でしぼりこむ" autocomplete="off">
+      <div id="teachers"></div>
+    </section>
+
+    <section id="view-answer" class="view" hidden>
+      <header><p class="eyebrow">こたえる</p><h1>見かけた先生は、いますか？</h1></header>
+      <p class="note">だれかが探している先生だけが、ここに出ます。見かけていなければ、何もしなくて大丈夫です。</p>
+      <div id="requests"></div>
+    </section>
+
+    <section id="view-teacher" class="view" hidden>
+      <header><p class="eyebrow">先生用</p><h1>参加と、いまの状況</h1></header>
+      <div id="teacher"></div>
+    </section>
+
+    <section id="view-me" class="view" hidden>
+      <header><p class="eyebrow">設定</p><h1>このアプリの約束</h1></header>
+      <div class="card">
+        <ul class="rules">
+          <li>探せるのは、参加に同意した先生だけです。</li>
+          <li>先生が「いまは探さないで」にしている間は、探せません。</li>
+          <li>場所を知らせられるのは、だれかが探しているときだけです。</li>
+          <li>知らせた場所は、探している人と先生本人にだけ届き、2時間で消えます。</li>
+          <li>うその場所を知らせない。見かけたときだけ答える。</li>
+          <li>先生を追いかけたり、休憩中に呼び止めたりするために使わない。</li>
+        </ul>
+      </div>
+      <div id="admin"></div>
+      <div class="row">
+        <a class="ghost" href="privacy.html">約束とデータの扱い</a>
+        <button id="logout-btn" class="ghost">ログアウト</button>
+      </div>
+      <p class="small" id="ver"></p>
+    </section>
+  </main>
+
+  <nav id="tabs">
+    <button data-view="find" class="on"><span>🔍</span>さがす</button>
+    <button data-view="answer"><span>🙋</span>こたえる<i id="badge" hidden></i></button>
+    <button data-view="teacher" id="tab-teacher" hidden><span>🧑‍🏫</span>先生用</button>
+    <button data-view="me"><span>⚙️</span>設定</button>
+  </nav>
+</div>
+
+<!-- 場所を選ぶ -->
+<div id="picker" class="sheet" hidden>
+  <div class="sheet-body">
+    <div class="sheet-head"><b id="picker-title"></b><button id="picker-close" class="x" aria-label="閉じる">×</button></div>
+    <div class="seg" id="floor-seg"></div>
+    <div id="map"></div>
+    <div id="others" class="chips"></div>
+    <p id="picked" class="picked">地図の部屋を押して、場所を選んでください。</p>
+    <div id="ago-row" class="row3" hidden>
+      <button data-ago="0" class="primary sm">たった今</button>
+      <button data-ago="30" class="primary sm">30分くらい前</button>
+      <button data-ago="60" class="primary sm">1時間くらい前</button>
+    </div>
+    <button id="picker-ok" class="primary" hidden>この場所にする</button>
+  </div>
+</div>
+
+<div id="toast" hidden role="status"></div>
+<script src="vendor/supabase.js"></script>
+<script src="app.js?v=1"></script>
+</body>
+</html>
