@@ -39,6 +39,8 @@ label { display: block; font-size: 14px; font-weight: 600; margin: 10px 0 6px; }
 .ghost.warn { color: var(--warn); }
 .ghost.on { background: var(--soft); border-color: var(--accent); color: var(--accent); font-weight: 700; }
 .ghost:disabled { opacity: .5; }
+.ghost.wide { width: 100%; margin-top: 14px; }
+.linkbtn { background: none; border: 0; padding: 0 2px; color: var(--accent); text-decoration: underline; font-size: inherit; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .chips p { width: 100%; margin: 0; font-size: 13px; color: var(--mute); }
 .t-head { display: flex; align-items: center; gap: 10px; }

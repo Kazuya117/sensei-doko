@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
-<link rel="stylesheet" href="style.css?v=1">
+<link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
 <div id="boot" class="center"><p>読み込んでいます…</p></div>
@@ -20,12 +20,15 @@
   <p class="lead">探し回らなくて大丈夫。<br>見かけた人が、場所を教えてくれます。</p>
   <button id="login-btn" class="primary">学校のGoogleアカウントでログイン</button>
   <p id="login-error" class="error" hidden></p>
+  <button id="demo-btn" class="ghost wide">ログインせずに、見本を見る</button>
+  <p class="small">見本では、架空の先生と校舎で、ひととおりの動きを試せます。押しても保存されません。</p>
   <p class="small">ログイン画面に「lotmxestisnibdyfemdk.supabase.co に移動」と表示されます。このアプリのログイン用サーバーの名前です。</p>
   <p class="small">探せるのは、参加に同意した先生だけです。<br><a href="privacy.html">このアプリの約束とデータの扱い</a></p>
 </section>
 
 <div id="app" hidden>
   <main>
+    <p id="demo-banner" class="banner" hidden>🧪 見本モードです。先生・生徒・校舎はすべて架空で、押しても保存されません。<button id="demo-exit" class="linkbtn">ログイン画面へ</button></p>
     <p id="hours" class="banner" hidden>いまは使える時間外です（月〜土の7時〜19時に使えます）。</p>
 
     <section id="view-find" class="view">
@@ -94,6 +97,6 @@
 
 <div id="toast" hidden role="status"></div>
 <script src="vendor/supabase.js"></script>
-<script src="app.js?v=1"></script>
+<script src="app.js?v=2"></script>
 </body>
 </html>

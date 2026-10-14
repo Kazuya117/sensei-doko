@@ -2,8 +2,9 @@
 /* 先生いまどこ？ — 先生を探し回る時間をなくすための、学内向けアプリ
    だれが何を見られるかは、データベース側（行レベルセキュリティ）で守っている。
    校内の部屋の名前と配置はデータベースにあり、ログインした人にだけ届く（このファイルには入れていない）。
-   下のキーは公開用（publishable）で、ページに含めてよい種類のもの。 */
-const VERSION = 1;
+   下のキーは公開用（publishable）で、ページに含めてよい種類のもの。
+   見本モード: ログインしなくても、架空の先生・生徒・校舎でひととおりの動きを見られる。データベースには何も書かない。 */
+const VERSION = 2;
 const SB_URL = 'https://lotmxestisnibdyfemdk.supabase.co';
 const SB_KEY = 'sb_publishable_Y0Vyfl28HOGzRdj_t5dr4g_b_xIrP3K';
 const sb = window.supabase.createClient(SB_URL, SB_KEY);
@@ -25,7 +26,7 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-let user = null, me = null;
+let user = null, me = null, demo = false;
 let tdme = { can_be_teacher: false, school_hours: true };
 let places = [], teachers = [], requests = [], searches = [], sightings = [];
 let view = 'find', choosing = null, timer = null;
@@ -112,7 +113,7 @@ $('#login-btn').addEventListener('click', async () => {
   if (error) { $('#login-btn').disabled = false; loginError(explain(error)); }
 });
 function loginError(msg) { const e = $('#login-error'); e.textContent = msg; e.hidden = false; }
-$('#logout-btn').addEventListener('click', async () => { await sb.auth.signOut(); });
+$('#logout-btn').addEventListener('click', async () => { if (demo) return leaveDemo(); await sb.auth.signOut(); });
 function readAuthError() {
   const p = new URLSearchParams(location.search + '&' + location.hash.replace(/^#/, ''));
   const desc = p.get('error_description');
@@ -123,6 +124,7 @@ function readAuthError() {
     : 'ログインできませんでした。もう一度試してください。');
 }
 async function onSession(session) {
+  if (demo) return;
   user = session ? session.user : null;
   clearInterval(timer);
   if (!user) { me = null; screen('login'); $('#login-btn').disabled = false; return; }
@@ -136,20 +138,41 @@ async function onSession(session) {
   timer = setInterval(() => { if (document.visibilityState === 'visible' && $('#picker').hidden) refresh(); }, 20000);
 }
 
+/* ---------- データの読み書き ---------- */
+/* 本番は Supabase。見本モードのときは、この画面の中だけで同じ形の読み書きをする（下の demoDb）。
+   どれも { error } を返す。 */
+const live = {
+  async load() {
+    const since = new Date(Date.now() - TWO_HOURS).toISOString();
+    const [m, t, r, s, g] = await Promise.all([
+      sb.rpc('td_me'),
+      sb.from('td_teachers').select('*').order('display_name'),
+      sb.rpc('td_open_requests'),
+      sb.from('td_searches').select('id, teacher_id, purpose, created_at').is('closed_at', null).gt('created_at', since).order('created_at', { ascending: false }),
+      sb.from('td_sightings').select('id, teacher_id, place, ago, created_at').order('created_at', { ascending: false }),
+    ]);
+    const error = m.error || t.error || r.error || s.error || g.error;
+    if (error) return { error };
+    return { data: {
+      tdme: (Array.isArray(m.data) ? m.data[0] : m.data) || tdme,
+      teachers: t.data || [], requests: r.data || [], searches: s.data || [], sightings: g.data || [],
+    } };
+  },
+  insertSearch: (row) => sb.from('td_searches').insert(row),
+  closeSearch: (id, outcome) => sb.from('td_searches').update({ closed_at: new Date().toISOString(), outcome }).eq('id', id),
+  insertSighting: (row) => sb.from('td_sightings').insert(row),
+  deleteSighting: (id) => sb.from('td_sightings').delete().eq('id', id),
+  insertTeacher: (row) => sb.from('td_teachers').insert(row),
+  updateTeacher: (patch) => sb.from('td_teachers').update(patch).eq('user_id', user.id),
+  deleteTeacher: () => sb.from('td_teachers').delete().eq('user_id', user.id),
+};
+let db = live;
+
 /* ---------- 読み込み ---------- */
 async function refresh() {
-  const since = new Date(Date.now() - TWO_HOURS).toISOString();
-  const [m, t, r, s, g] = await Promise.all([
-    sb.rpc('td_me'),
-    sb.from('td_teachers').select('*').order('display_name'),
-    sb.rpc('td_open_requests'),
-    sb.from('td_searches').select('id, teacher_id, purpose, created_at').is('closed_at', null).gt('created_at', since).order('created_at', { ascending: false }),
-    sb.from('td_sightings').select('id, teacher_id, place, ago, created_at').order('created_at', { ascending: false }),
-  ]);
-  const err = m.error || t.error || r.error || s.error || g.error;
-  if (err) { toast(explain(err)); return; }
-  tdme = (Array.isArray(m.data) ? m.data[0] : m.data) || tdme;
-  teachers = t.data || []; requests = r.data || []; searches = s.data || []; sightings = g.data || [];
+  const { data, error } = await db.load();
+  if (error) { toast(explain(error)); return; }
+  ({ tdme, teachers, requests, searches, sightings } = data);
   render();
 }
 /* 自分が答えられる依頼（自分が探している分と、自分自身の分は除く） */
@@ -202,7 +225,7 @@ $('#teachers').addEventListener('click', async (e) => {
   if (e.target.closest('[data-act=ask]')) { choosing = choosing === id ? null : id; return renderFind(); }
   const p = e.target.closest('[data-purpose]');
   if (p) {
-    const { error } = await sb.from('td_searches').insert({ teacher_id: id, purpose: p.dataset.purpose });
+    const { error } = await db.insertSearch({ teacher_id: id, purpose: p.dataset.purpose });
     choosing = null;
     toast(error ? explain(error) : '聞いてみました。見かけた人の答えを待ちましょう');
     await refresh();
@@ -211,7 +234,7 @@ $('#teachers').addEventListener('click', async (e) => {
 $('#my-searches').addEventListener('click', async (e) => {
   const b = e.target.closest('[data-close]'); if (!b) return;
   const id = b.closest('[data-search]').dataset.search;
-  const { error } = await sb.from('td_searches').update({ closed_at: new Date().toISOString(), outcome: b.dataset.close }).eq('id', id);
+  const { error } = await db.closeSearch(id, b.dataset.close);
   toast(error ? explain(error) : b.dataset.close === 'met' ? '会えてよかった！記録しました' : '記録しました');
   await refresh();
 });
@@ -256,7 +279,7 @@ $('#picker').addEventListener('click', async (e) => {
   const p = e.target.closest('[data-place]'); if (p) { pick.place = p.dataset.place; return drawPicker(); }
   const a = e.target.closest('[data-ago]');
   if (a && pick.place) {
-    const { error } = await sb.from('td_sightings').insert({ teacher_id: pick.teacher, place: pick.place, ago: +a.dataset.ago });
+    const { error } = await db.insertSighting({ teacher_id: pick.teacher, place: pick.place, ago: +a.dataset.ago });
     $('#picker').hidden = true;
     toast(error ? explain(error) : 'ありがとう！探している人に届きました');
     await refresh();
@@ -315,7 +338,7 @@ function renderTeacher() {
     </div>`;
 }
 async function updateTeacher(patch, okMsg) {
-  const { error } = await sb.from('td_teachers').update(patch).eq('user_id', user.id);
+  const { error } = await db.updateTeacher(patch);
   toast(error ? explain(error) : okMsg); await refresh();
 }
 async function setStatus(kind, place = null) {
@@ -342,7 +365,7 @@ $('#teacher').addEventListener('click', async (e) => {
   if (act === 'join') {
     const display_name = $('#t-name').value.trim();
     if (!display_name) return toast('表示する名前を入れてください');
-    const { error } = await sb.from('td_teachers').insert({ user_id: user.id, display_name, note: $('#t-note').value.trim() || null });
+    const { error } = await db.insertTeacher({ user_id: user.id, display_name, note: $('#t-note').value.trim() || null });
     toast(error ? explain(error) : '参加しました。いつでも止められます'); return refresh();
   }
   if (act === 'rename') {
@@ -352,12 +375,12 @@ $('#teacher').addEventListener('click', async (e) => {
   }
   if (act === 'toggle') { const t = myTeacher(); return updateTeacher({ participating: !t.participating }, t.participating ? '参加を止めました' : '参加を再開しました'); }
   if (act === 'del') {
-    const { error } = await sb.from('td_sightings').delete().eq('id', b.closest('[data-sight]').dataset.sight);
+    const { error } = await db.deleteSighting(b.closest('[data-sight]').dataset.sight);
     toast(error ? explain(error) : '消しました'); return refresh();
   }
   if (act === 'leave') {
     if (b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = 'もう一度押すと、参加をやめます'; return; }
-    const { error } = await sb.from('td_teachers').delete().eq('user_id', user.id);
+    const { error } = await db.deleteTeacher();
     toast(error ? explain(error) : '参加をやめました。情報は消えました'); return refresh();
   }
 });
@@ -378,11 +401,106 @@ $('#admin').addEventListener('click', (e) => {
   if (e.target.closest('#a-add')) { const v = $('#a-email').value.trim(); if (v) renderAdmin('add', v); }
 });
 
+/* ---------- 見本モード ---------- */
+/* ログインしなくても、どんなアプリか分かるようにする。先生・生徒・校舎はすべて架空で、
+   押した結果はこの画面の中にだけ残り、画面を閉じると消える。データベースには何も送らない。 */
+const DEMO_UID = 'demo-me';
+const room = (floor, key, label, kind, x, y, w = 48, h = 36, extra = {}) =>
+  ({ key, floor, label, kind, x, y, w, h, rot: 0, selectable: true, sub: null, ...extra });
+const DEMO_PLACES = [
+  room('1F', 'd_1a', '1年A組', 'jhs', 40, 30), room('1F', 'd_1b', '1年B組', 'jhs', 96, 30), room('1F', 'd_1c', '1年C組', 'jhs', 152, 30),
+  room('1F', 'd_sci', '理科室', 'special', 208, 30), room('1F', 'd_nurse', '保健室', 'closed', 264, 30, 48, 36, { selectable: false }),
+  room('1F', 'd_staff', '職員室', 'staff', 76, 90, 120, 36), room('1F', 'd_entrance', '昇降口', 'common', 172, 90, 64, 36), room('1F', 'd_mp', '多目的室', 'special', 240, 90, 60, 36),
+  room('2F', 'd_2a', '2年A組', 'jhs', 40, 30), room('2F', 'd_2b', '2年B組', 'jhs', 96, 30), room('2F', 'd_2c', '2年C組', 'jhs', 152, 30),
+  room('2F', 'd_music', '音楽室', 'special', 208, 30), room('2F', 'd_art', '美術室', 'special', 264, 30),
+  room('2F', 'd_lib', '図書室', 'common', 76, 90, 120, 36), room('2F', 'd_career', '進路室', 'staff', 172, 90, 64, 36), room('2F', 'd_pc', 'PC室', 'special', 240, 90, 60, 36),
+  room('3F', 'd_3a', '3年A組', 'jhs', 40, 30), room('3F', 'd_3b', '3年B組', 'jhs', 96, 30), room('3F', 'd_3c', '3年C組', 'jhs', 152, 30),
+  room('3F', 'd_home', '家庭科室', 'special', 208, 30), room('3F', 'd_hall', 'ホール', 'common', 264, 30),
+  room('3F', 'd_study', '自習室', 'common', 76, 90, 120, 36), room('3F', 'd_staff2', '第2職員室', 'staff', 190, 90, 100, 36),
+  { key: 'd_gym', floor: 'other', label: '体育館', kind: 'common', selectable: true, rot: 0 },
+  { key: 'd_ground', floor: 'other', label: 'グラウンド', kind: 'common', selectable: true, rot: 0 },
+  { key: 'd_moving', floor: 'other', label: '廊下・階段（移動中）', kind: 'common', selectable: true, rot: 0 },
+  { key: 'd_elsewhere', floor: 'other', label: '校内のそのほか', kind: 'common', selectable: true, rot: 0 },
+];
+function demoDb() {
+  const t0 = Date.now();
+  const at = (min) => new Date(t0 - min * 60000).toISOString();
+  const nid = () => 'demo-' + Math.random().toString(36).slice(2, 8);
+  const T = (user_id, display_name, note, extra = {}) =>
+    ({ user_id, display_name, note, participating: true, paused_until: null, status_kind: null, status_place: null, status_until: null, status_at: null, ...extra });
+  const tl = [
+    T('demo-t1', '田中先生', '数学・2年A組担任'),
+    T('demo-t2', '佐藤先生', '理科・科学部顧問', { status_kind: 'here', status_place: 'd_sci', status_until: '16:30', status_at: at(8) }),
+    T('demo-t3', '鈴木先生', '英語'),
+    T('demo-t4', '高橋先生', '国語・図書委員会', { status_kind: 'back_soon', status_at: at(15) }),
+    T('demo-t5', '山本先生', '体育・サッカー部', { status_kind: 'busy', status_until: '17:00', status_at: at(40) }),
+    T('demo-t6', '渡辺先生', '社会', { paused_until: new Date(t0 + 3600e3).toISOString() }),
+    T('demo-t7', '小林先生', '音楽'),
+    T(DEMO_UID, '見本の先生（あなた）', '「先生用」タブの見本'),
+  ];
+  const sl = [ /* 自分（見本の生徒）が探している */
+    { id: nid(), teacher_id: 'demo-t1', purpose: 'question', created_at: at(12) },
+    { id: nid(), teacher_id: 'demo-t2', purpose: 'consult', created_at: at(20) },
+  ];
+  const ol = [ /* ほかの生徒が探している（だれが、は見えない） */
+    { teacher_id: 'demo-t3', purpose: 'submit', created_at: at(5) }, { teacher_id: 'demo-t3', purpose: 'question', created_at: at(18) },
+    { teacher_id: 'demo-t4', purpose: 'club', created_at: at(25) },
+    { teacher_id: DEMO_UID, purpose: 'question', created_at: at(6) }, { teacher_id: DEMO_UID, purpose: 'submit', created_at: at(14) },
+  ];
+  const gl = [ /* 「見かけた」の報告 */
+    { id: nid(), teacher_id: 'demo-t1', place: 'd_lib', ago: 0, created_at: at(3), reporter_id: 'demo-s1' },
+    { id: nid(), teacher_id: 'demo-t1', place: 'd_2a', ago: 30, created_at: at(10), reporter_id: 'demo-s2' },
+    { id: nid(), teacher_id: DEMO_UID, place: 'd_art', ago: 30, created_at: at(4), reporter_id: 'demo-s3' },
+  ];
+  const requests = () => { /* td_open_requests と同じ形にまとめる */
+    const by = {};
+    for (const s of [...sl.map((s) => ({ ...s, mine: true })), ...ol]) {
+      const q = by[s.teacher_id] || (by[s.teacher_id] = { teacher_id: s.teacher_id, n: 0, last_at: s.created_at, purposes: [], mine: false });
+      q.n++; if (s.created_at > q.last_at) q.last_at = s.created_at; q.purposes.push(s.purpose); q.mine = q.mine || !!s.mine;
+    }
+    return Object.values(by).map((q) => ({ ...q, purposes: q.teacher_id === DEMO_UID ? q.purposes : null }));
+  };
+  const ok = () => Promise.resolve({ error: null });
+  return {
+    async load() {
+      return { data: { tdme: { can_be_teacher: true, school_hours: true }, teachers: [...tl], requests: requests(), searches: [...sl], sightings: [...gl] } };
+    },
+    insertSearch(row) {
+      sl.unshift({ id: nid(), teacher_id: row.teacher_id, purpose: row.purpose, created_at: new Date().toISOString() });
+      setTimeout(async () => { /* 6秒後に、架空の生徒が答える */
+        if (!demo || !sl.some((s) => s.teacher_id === row.teacher_id)) return;
+        const pool = DEMO_PLACES.filter((p) => p.selectable && p.x != null);
+        gl.unshift({ id: nid(), teacher_id: row.teacher_id, place: pool[Math.floor(Math.random() * pool.length)].key, ago: 0, created_at: new Date().toISOString(), reporter_id: 'demo-s9' });
+        await refresh(); toast('（見本）ほかの生徒が「見かけた」と答えました');
+      }, 6000);
+      return ok();
+    },
+    closeSearch(id) { const i = sl.findIndex((s) => s.id === id); if (i >= 0) sl.splice(i, 1); return ok(); },
+    insertSighting(row) { gl.unshift({ id: nid(), ...row, created_at: new Date().toISOString(), reporter_id: DEMO_UID }); return ok(); },
+    deleteSighting(id) { const i = gl.findIndex((g) => g.id === id); if (i >= 0) gl.splice(i, 1); return ok(); },
+    insertTeacher(row) { tl.push(T(DEMO_UID, row.display_name, row.note)); return ok(); },
+    updateTeacher(patch) { Object.assign(tl.find((t) => t.user_id === DEMO_UID), patch); return ok(); },
+    deleteTeacher() { const i = tl.findIndex((t) => t.user_id === DEMO_UID); if (i >= 0) tl.splice(i, 1); return ok(); },
+  };
+}
+async function enterDemo() {
+  demo = true; db = demoDb();
+  user = { id: DEMO_UID }; me = { id: DEMO_UID, role: 'member' }; places = DEMO_PLACES;
+  clearInterval(timer);
+  $('#demo-banner').hidden = false; $('#logout-btn').textContent = '見本を終わる';
+  await refresh(); screen('app'); show('find');
+  timer = setInterval(() => { if (document.visibilityState === 'visible' && $('#picker').hidden) refresh(); }, 20000);
+}
+function leaveDemo() { location.replace(location.pathname); }
+$('#demo-btn').addEventListener('click', enterDemo);
+$('#demo-exit').addEventListener('click', leaveDemo);
+
 /* ---------- 起動 ---------- */
 $('#tabs').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) show(b.dataset.view); });
 document.addEventListener('visibilitychange', () => { if (user && document.visibilityState === 'visible') refresh(); });
 $('#ver').textContent = `バージョン ${VERSION}`;
 readAuthError();
+if (new URLSearchParams(location.search).has('demo')) enterDemo();
 let lastUid;
 sb.auth.onAuthStateChange((event, session) => {
   const uid = session ? session.user.id : null;
