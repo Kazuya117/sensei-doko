@@ -54,3 +54,7 @@
 - お知らせ（プッシュ通知）。いまは20秒ごとの自動更新と、「こたえる」タブの数字で知らせている。
 - 外れた報告が続く人の扱い。
 - 利用データの集計画面。
+
+## 正本（docs/ssot）
+
+何を作るか・何を約束しているか・どう運営するかは `docs/ssot/` の Master Charter と SSOT-1〜3 が正本です（現在 DRAFT・批准前）。この README と `privacy.html` は利用者向けの写しで、食い違ったら `docs/ssot/` が優先します。決めたことは `docs/decisions/DECISIONS.md` に残します。
